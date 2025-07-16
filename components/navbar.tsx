@@ -1,122 +1,128 @@
 "use client"
 
-import { motion } from "framer-motion"
+import { useState } from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Menu, X, Upload, LogIn } from "lucide-react"
+import { cn } from "@/lib/utils"
 
-interface NavbarProps {
-  activeSection: string
-  scrollToSection: (section: string) => void
-}
+export default function Navbar() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const pathname = usePathname()
 
-export default function Navbar({ activeSection, scrollToSection }: NavbarProps) {
-  const navItems = ["home", "about", "projects", "contact", "social"]
+  const toggleMenu = () => {
+    setIsMenuOpen(!isMenuOpen)
+  }
+
+  const navItems = [
+    { name: "Creator", path: "/creator" },
+    { name: "Writer", path: "/writer" },
+    { name: "Video Maker", path: "/video-maker" },
+  ]
 
   return (
-    <motion.nav
-      className="fixed top-0 left-0 w-full bg-white/70 backdrop-blur-md z-50 py-4 px-4 border-b border-gray-100/50"
-      initial={{ y: -100, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
-    >
-      <div className="container mx-auto flex justify-center items-center">
-        <ul className="flex items-center space-x-6 md:space-x-10">
-          {navItems.slice(0, 2).map((item, index) => (
-            <motion.li
-              key={item}
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 + index * 0.05 }}
-            >
-              <motion.button
-                onClick={() => scrollToSection(item)}
-                className={`text-sm uppercase tracking-widest transition-all duration-300 relative ${
-                  activeSection === item ? "font-medium text-yellow-500" : "font-light hover:text-yellow-400"
-                }`}
-                whileHover={{ y: -2, scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                {item}
-                {activeSection === item && (
-                  <motion.div
-                    className="absolute -bottom-1 left-0 w-full h-0.5 bg-yellow-400"
-                    layoutId="activeIndicator"
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ duration: 0.3, ease: "easeOut" }}
-                  />
-                )}
-              </motion.button>
-            </motion.li>
-          ))}
+    <nav className="fixed w-full top-0 z-50 bg-violet-900/70 backdrop-blur-lg border-b border-violet-700/50 shadow-lg">
+      <div className="container mx-auto px-4">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo */}
+          <Link href="/" className="flex items-center group">
+            <div className="relative overflow-hidden mr-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-violet-400 to-purple-600 rounded-lg flex items-center justify-center transform group-hover:rotate-12 transition-transform duration-300">
+                <span className="text-white font-bold text-lg">A</span>
+              </div>
+              <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg"></div>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-2xl font-bold bg-gradient-to-r from-violet-300 to-purple-400 text-transparent bg-clip-text relative">
+                Animaker
+                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-violet-400 to-purple-500 group-hover:w-full transition-all duration-300"></span>
+              </span>
+              <span className="text-[10px] text-violet-300 -mt-1">Create & Share Anime Art</span>
+            </div>
+          </Link>
 
-          <motion.li
-            className="mx-2 md:mx-6"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            <Link href="/" className="text-2xl md:text-3xl font-medium tracking-tighter">
-              <motion.div
-                className="relative inline-block group"
-                whileHover={{ scale: 1.05 }}
-                transition={{ duration: 0.2 }}
-              >
-                <motion.span
-                  animate={{
-                    textShadow: ["0 0 0px rgba(0,0,0,0)", "0 0 10px rgba(250,204,21,0.3)", "0 0 0px rgba(0,0,0,0)"],
-                  }}
-                  transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY }}
-                >
-                  CLOSE
-                </motion.span>
-                <motion.span
-                  className="text-yellow-400 ml-1"
-                  animate={{
-                    opacity: [0.8, 1, 0.8],
-                    y: [0, -1, 0],
-                  }}
-                  transition={{
-                    duration: 2,
-                    repeat: Number.POSITIVE_INFINITY,
-                    repeatType: "reverse",
-                  }}
-                >
-                  IN
-                </motion.span>
-              </motion.div>
-            </Link>
-          </motion.li>
-
-          {navItems.slice(2).map((item, index) => (
-            <motion.li
-              key={item}
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.25 + index * 0.05 }}
-            >
-              <motion.button
-                onClick={() => scrollToSection(item)}
-                className={`text-sm uppercase tracking-widest transition-all duration-300 relative ${
-                  activeSection === item ? "font-medium text-yellow-500" : "font-light hover:text-yellow-400"
-                }`}
-                whileHover={{ y: -2, scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                {item}
-                {activeSection === item && (
-                  <motion.div
-                    className="absolute -bottom-1 left-0 w-full h-0.5 bg-yellow-400"
-                    layoutId="activeIndicator"
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ duration: 0.3, ease: "easeOut" }}
-                  />
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center space-x-1">
+            {navItems.map((item) => (
+              <Link
+                key={item.name}
+                href={item.path}
+                className={cn(
+                  "px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  pathname === item.path
+                    ? "bg-violet-700 text-white"
+                    : "text-violet-200 hover:bg-violet-800 hover:text-white",
                 )}
-              </motion.button>
-            </motion.li>
-          ))}
-        </ul>
+              >
+                {item.name}
+              </Link>
+            ))}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="hidden md:flex items-center space-x-2">
+            <Button asChild variant="ghost" className="text-violet-200 hover:text-white hover:bg-violet-800">
+              <Link href="/upload">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload
+              </Link>
+            </Button>
+            <Button asChild variant="default" className="bg-violet-600 hover:bg-violet-700">
+              <Link href="/login">
+                <LogIn className="mr-2 h-4 w-4" />
+                Login
+              </Link>
+            </Button>
+          </div>
+
+          {/* Mobile menu button */}
+          <div className="md:hidden">
+            <Button variant="ghost" size="icon" onClick={toggleMenu} className="text-violet-200">
+              {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </Button>
+          </div>
+        </div>
       </div>
-    </motion.nav>
+
+      {/* Mobile Navigation */}
+      {isMenuOpen && (
+        <div className="md:hidden bg-violet-900/95 backdrop-blur-md">
+          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+            {navItems.map((item) => (
+              <Link
+                key={item.name}
+                href={item.path}
+                className={cn(
+                  "block px-3 py-2 rounded-md text-base font-medium",
+                  pathname === item.path
+                    ? "bg-violet-700 text-white"
+                    : "text-violet-200 hover:bg-violet-800 hover:text-white",
+                )}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {item.name}
+              </Link>
+            ))}
+            <Link
+              href="/upload"
+              className="flex items-center px-3 py-2 rounded-md text-base font-medium text-violet-200 hover:bg-violet-800 hover:text-white"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Upload
+            </Link>
+            <Link
+              href="/login"
+              className="flex items-center px-3 py-2 rounded-md text-base font-medium text-violet-200 hover:bg-violet-800 hover:text-white"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <LogIn className="mr-2 h-4 w-4" />
+              Login
+            </Link>
+          </div>
+        </div>
+      )}
+    </nav>
   )
 }

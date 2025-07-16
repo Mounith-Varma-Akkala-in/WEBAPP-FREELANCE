@@ -1,18 +1,18 @@
 import type React from "react"
+import { Poppins } from "next/font/google"
 import "./globals.css"
-import type { Metadata } from "next"
-import { Space_Grotesk } from "next/font/google"
+import Navbar from "@/components/navbar"
+import AnimatedBackground from "@/components/animated-background"
 import { ThemeProvider } from "@/components/theme-provider"
 
-// Using Space Grotesk for a more minimal, modern look
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
+const poppins = Poppins({
   weight: ["300", "400", "500", "600", "700"],
+  subsets: ["latin"],
 })
 
-export const metadata: Metadata = {
-  title: "CLOSE IN - Web Development for Local Businesses",
-  description: "We build custom ecommerce and portfolio websites for local businesses.",
+export const metadata = {
+  title: "Animaker - Share Your Anime Art",
+  description: "A platform for anime, manga, and light novel creators to share their work",
     generator: 'v0.dev'
 }
 
@@ -22,10 +22,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={spaceGrotesk.className}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${poppins.className} bg-violet-50 dark:bg-violet-950 min-h-screen`}>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <AnimatedBackground />
+          <Navbar />
+          <main className="relative z-10">{children}</main>
         </ThemeProvider>
       </body>
     </html>
