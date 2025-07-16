@@ -1,296 +1,391 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import Image from "next/image"
+import { useState, useEffect } from "react"
+import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { motion, AnimatePresence } from "framer-motion"
+import {
+  Bell,
+  BookMarked,
+  HelpCircle,
+  Home,
+  LogOut,
+  Menu,
+  MessageSquare,
+  Moon,
+  Sun,
+  Trophy,
+  User,
+  X,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Phone, Menu, X, MessageCircle, Mail, Instagram } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Badge } from "@/components/ui/badge"
+import { useTheme } from "next-themes"
+import { cn } from "@/lib/utils"
+import { Brain } from "lucide-react"
 import { useMobile } from "@/hooks/use-mobile"
+import { createClient } from "@/lib/supabase/client"
+import { useToast } from "@/hooks/use-toast"
+import type { Database } from "@/lib/supabase/database.types"
+
+type Notification = Database["public"]["Tables"]["notifications"]["Row"]
 
 export default function Navbar() {
   const pathname = usePathname()
-  const router = useRouter()
+  const { theme, setTheme } = useTheme()
+  const [isOpen, setIsOpen] = useState(false)
   const isMobile = useMobile()
-  const [isScrolled, setIsScrolled] = useState(false)
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-
-  const toggleMenu = useCallback(() => {
-    setIsMenuOpen((prev) => !prev)
-  }, [])
-
-  // Optimized scroll handler
-  const handleScroll = useCallback(() => {
-    const scrolled = window.scrollY > 20
-    setIsScrolled(scrolled)
-  }, [])
+  const [mounted, setMounted] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const supabase = createClient()
+  const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
-    window.addEventListener("scroll", handleScroll, { passive: true })
-    return () => window.removeEventListener("scroll", handleScroll)
-  }, [handleScroll])
+    setMounted(true)
 
-  // Close mobile menu when route changes
-  useEffect(() => {
-    setIsMenuOpen(false)
-  }, [pathname])
+    const getUserAndNotifications = async () => {
+      setLoading(true)
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      setUser(session?.user || null)
 
-  // Handle mobile back button navigation
-  useEffect(() => {
-    const handlePopState = () => {
-      setIsMenuOpen(false)
+      if (session?.user) {
+        const { data: notificationsData, error: notificationsError } = await supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", session.user.id)
+          .eq("read", false)
+          .order("created_at", { ascending: false })
+          .limit(5) // Fetch up to 5 unread notifications
+
+        if (notificationsError) {
+          console.error("Error fetching notifications:", notificationsError.message)
+        } else {
+          setNotifications(notificationsData || [])
+        }
+      }
+      setLoading(false)
     }
 
-    window.addEventListener("popstate", handlePopState)
-    return () => window.removeEventListener("popstate", handlePopState)
-  }, [])
+    getUserAndNotifications()
 
-  // Prevent body scroll when menu is open
-  useEffect(() => {
-    if (isMenuOpen) {
-      document.body.style.overflow = "hidden"
-    } else {
-      document.body.style.overflow = "unset"
-    }
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user || null)
+      if (session?.user) {
+        getUserAndNotifications() // Re-fetch notifications on auth state change
+      } else {
+        setNotifications([])
+      }
+    })
+
+    // Realtime listener for new notifications
+    const channel = supabase
+      .channel("public:notifications")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user?.id}` },
+        (payload) => {
+          const newNotification = payload.new as Notification
+          setNotifications((prev) => [newNotification, ...prev].slice(0, 5)) // Add new notification and keep max 5
+          toast({
+            title: "New Notification!",
+            description: newNotification.message,
+            duration: 5000,
+          })
+        },
+      )
+      .subscribe()
 
     return () => {
-      document.body.style.overflow = "unset"
+      authListener.subscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
-  }, [isMenuOpen])
+  }, [supabase, user?.id, toast]) // Depend on user.id to re-subscribe to correct channel
 
-  const navLinks = [
-    { name: "Home", path: "/" },
-    { name: "Courses", path: "/courses" },
-    { name: "Memberships", path: "/memberships" },
-    { name: "About", path: "/about" },
-    { name: "Work With Us", path: "/work-with-us" },
-    { name: "Contact", path: "/contact" },
+  const navItems = [
+    { name: "Home", href: "/", icon: Home },
+    { name: "Learn", href: "/learn", icon: Brain },
+    { name: "Compete", href: "/compete", icon: Trophy },
+    { name: "Tutorial", href: "/tutorial", icon: MessageSquare },
+    { name: "Progress", href: "/dashboard", icon: BookMarked, auth: true },
   ]
 
-  const handleNavClick = useCallback(
-    (path: string) => {
-      setIsMenuOpen(false)
-      router.push(path)
-    },
-    [router],
-  )
+  const toggleMenu = () => {
+    setIsOpen(!isOpen)
+  }
+
+  const closeMenu = () => {
+    setIsOpen(false)
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    toast({
+      title: "Logged out",
+      description: "You have been successfully logged out",
+    })
+    router.push("/")
+    router.refresh()
+  }
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    await supabase.from("notifications").update({ read: true }).eq("id", notificationId)
+    setNotifications((prev) => prev.filter((n) => n.id !== notificationId))
+  }
 
   return (
-    <>
-      <header
-        className={`fixed w-full z-50 transition-all duration-500 ${
-          isScrolled || isMenuOpen
-            ? "bg-black/95 backdrop-blur-lg shadow-2xl border-b border-white/10"
-            : "bg-transparent"
-        }`}
-      >
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-20">
-            {/* Enhanced Logo */}
-            <button
-              onClick={() => handleNavClick("/")}
-              className="flex items-center space-x-3 group focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-transparent rounded-lg p-1"
-              aria-label="Go to homepage"
+    <header className="sticky top-0 z-50 w-full border-b border-gray-800 bg-black/95 backdrop-blur supports-[backdrop-filter]:bg-black/60">
+      <div className="container flex h-16 items-center justify-between">
+        <div className="flex items-center">
+          <Link href="/" className="flex items-center mr-6" onClick={closeMenu}>
+            <motion.div
+              initial={{ rotate: 0 }}
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY, repeatType: "loop", ease: "linear" }}
+              className="mr-2 rounded-full bg-gradient-to-r from-red-500 to-yellow-500 p-1"
             >
-              <div className="relative">
-                {/* Glow Effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-yellow-500/30 to-yellow-600/30 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <Trophy className="h-6 w-6 text-white" />
+            </motion.div>
+            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-red-600 to-yellow-500">
+              SkillQuest
+            </span>
+          </Link>
 
-                {/* Logo Container */}
-                <div className="relative h-10 w-10 md:h-12 md:w-12 rounded-full overflow-hidden border-2 border-yellow-500/70 shadow-xl bg-white/10 backdrop-blur-sm transform transition-transform duration-300 group-hover:scale-105">
-                  <Image
-                    src="/images/new-logo.png"
-                    alt="Gravity Fitness Logo"
-                    fill
-                    className="object-contain p-1"
-                    priority
-                    sizes="(max-width: 768px) 40px, 48px"
-                  />
-                  <div className="absolute inset-0 rounded-full border border-yellow-400/30 z-30" />
-                </div>
-              </div>
-              <span className="text-xl md:text-2xl font-bold tracking-wide text-white transform transition-transform duration-300 group-hover:scale-102">
-                <span className="font-light">GRAVITY</span>{" "}
-                <span className="text-yellow-400 font-extrabold">FITNESS</span>
-              </span>
-            </button>
-
-            {/* Desktop Navigation */}
-            {!isMobile && (
-              <nav className="hidden md:flex items-center space-x-8" role="navigation">
-                {navLinks.map((link) => (
-                  <button
-                    key={link.path}
-                    onClick={() => handleNavClick(link.path)}
-                    className={`relative font-semibold tracking-wide hover:text-yellow-500 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-transparent rounded px-2 py-1 ${
-                      pathname === link.path ? "text-yellow-500" : "text-white"
-                    }`}
-                    aria-current={pathname === link.path ? "page" : undefined}
-                  >
-                    {link.name}
-                    {pathname === link.path && (
-                      <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-full" />
-                    )}
-                  </button>
-                ))}
-              </nav>
-            )}
-
-            {/* Contact Icons - Desktop */}
-            <div className="hidden md:flex items-center space-x-4">
-              <a
-                href="tel:+919948614914"
-                className="p-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-yellow-600 transition-all duration-300 group transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                aria-label="Call us at +91 9948614914"
-              >
-                <Phone className="h-5 w-5 text-white group-hover:scale-110 transition-transform" />
-              </a>
-              <a
-                href="mailto:groovefitness79@gmail.com"
-                className="p-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-yellow-600 transition-all duration-300 group transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                aria-label="Email us at groovefitness79@gmail.com"
-              >
-                <Mail className="h-5 w-5 text-white group-hover:scale-110 transition-transform" />
-              </a>
-              <a
-                href="https://wa.me/919948614914"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-green-600 transition-all duration-300 group transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-green-500"
-                aria-label="WhatsApp us"
-              >
-                <MessageCircle className="h-5 w-5 text-white group-hover:scale-110 transition-transform" />
-              </a>
-              <a
-                href="https://www.instagram.com/gravityfitness_myp?igsh=ZDQ1aGVhaDNnajNv"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-pink-600 transition-all duration-300 group transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-pink-500"
-                aria-label="Follow us on Instagram"
-              >
-                <Instagram className="h-5 w-5 text-white group-hover:scale-110 transition-transform" />
-              </a>
-            </div>
-
-            {/* Mobile Menu Button */}
-            <div className="md:hidden">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleMenu}
-                className="text-white hover:bg-white/10 border border-white/20 rounded-full transform transition-transform duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                aria-label={isMenuOpen ? "Close menu" : "Open menu"}
-                aria-expanded={isMenuOpen}
-              >
-                <div
-                  className="transform transition-transform duration-300"
-                  style={{ rotate: isMenuOpen ? "180deg" : "0deg" }}
-                >
-                  {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-                </div>
-              </Button>
-            </div>
-          </div>
+          {!isMobile && (
+            <nav className="hidden md:flex items-center space-x-4 lg:space-x-6">
+              {navItems
+                .filter((item) => !item.auth || (item.auth && user))
+                .map((item) => {
+                  const isActive = pathname === item.href
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center text-sm font-medium transition-colors hover:text-primary relative py-2",
+                        isActive ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      <item.icon className="h-4 w-4 mr-2" />
+                      {item.name}
+                      {isActive && (
+                        <motion.div
+                          layoutId="navbar-indicator"
+                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-red-500 to-yellow-500"
+                          transition={{ type: "spring", duration: 0.5 }}
+                        />
+                      )}
+                    </Link>
+                  )
+                })}
+            </nav>
+          )}
         </div>
-      </header>
 
-      {/* Enhanced Mobile Menu */}
-      {isMenuOpen && (
-        <div
-          className="fixed inset-0 z-40 md:hidden"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Mobile navigation menu"
-        >
-          <div className="fixed inset-0 bg-black/95 backdrop-blur-lg">
-            <div className="flex flex-col h-full pt-20">
-              <div className="container mx-auto px-4 py-8 space-y-6 flex-1">
-                <nav className="flex flex-col space-y-4" role="navigation">
-                  {navLinks.map((link, index) => (
-                    <div
-                      key={link.path}
-                      className="transform transition-all duration-300"
-                      style={{
-                        opacity: isMenuOpen ? 1 : 0,
-                        transform: `translateX(${isMenuOpen ? 0 : -20}px)`,
-                        transitionDelay: `${index * 100}ms`,
+        <div className="flex items-center space-x-4">
+          {!isMobile && user && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="relative bg-transparent">
+                    <Bell className="h-5 w-5" />
+                    {notifications.length > 0 && (
+                      <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white">
+                        {notifications.length}
+                      </Badge>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  {notifications.length > 0 ? (
+                    notifications.map((notification) => (
+                      <DropdownMenuItem key={notification.id} onClick={() => markNotificationAsRead(notification.id)}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{notification.type.replace(/_/g, " ")}</span>
+                          <span className="text-xs text-gray-500">{notification.message}</span>
+                        </div>
+                      </DropdownMenuItem>
+                    ))
+                  ) : (
+                    <DropdownMenuItem className="text-gray-500">No new notifications</DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <HelpCircle className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem>
+                    <span>Help Center</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <span>Documentation</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <span>Contact Support</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+
+          <Button variant="outline" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+            {mounted && <>{theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</>}
+          </Button>
+
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src="/placeholder.svg?height=32&width=32" alt="User" />
+                    <AvatarFallback>{user.email?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link href="/profile">
+                    <User className="mr-2 h-4 w-4" />
+                    <span>Profile</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard">
+                    <Trophy className="mr-2 h-4 w-4" />
+                    <span>My Progress</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/bookmarks">
+                    <BookMarked className="mr-2 h-4 w-4" />
+                    <span>Bookmarks</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            !loading && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-gradient-to-r from-red-600 to-yellow-500 hover:from-red-700 hover:to-yellow-600 text-white border-0"
+                onClick={() => router.push("/auth/login")}
+              >
+                Login
+              </Button>
+            )
+          )}
+
+          {isMobile && (
+            <Button variant="ghost" size="icon" onClick={toggleMenu}>
+              <Menu className="h-6 w-6" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile menu */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="md:hidden"
+          >
+            <div className="container py-4 space-y-4">
+              <div className="flex justify-end">
+                <Button variant="ghost" size="icon" onClick={closeMenu}>
+                  <X className="h-6 w-6" />
+                </Button>
+              </div>
+              <nav className="flex flex-col space-y-4">
+                {navItems
+                  .filter((item) => !item.auth || (item.auth && user))
+                  .map((item) => {
+                    const isActive = pathname === item.href
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={cn(
+                          "flex items-center text-sm font-medium transition-colors hover:text-primary p-2 rounded-md",
+                          isActive ? "bg-gray-800 text-foreground" : "text-muted-foreground",
+                        )}
+                        onClick={closeMenu}
+                      >
+                        <item.icon className="h-5 w-5 mr-3" />
+                        {item.name}
+                      </Link>
+                    )
+                  })}
+                <div className="pt-4 border-t border-gray-800">
+                  <Link
+                    href="/help"
+                    className="flex items-center text-sm font-medium transition-colors hover:text-primary p-2 rounded-md text-muted-foreground"
+                    onClick={closeMenu}
+                  >
+                    <HelpCircle className="h-5 w-5 mr-3" />
+                    Help Center
+                  </Link>
+                  {user && (
+                    <Link
+                      href="/notifications"
+                      className="flex items-center text-sm font-medium transition-colors hover:text-primary p-2 rounded-md text-muted-foreground"
+                      onClick={closeMenu}
+                    >
+                      <Bell className="h-5 w-5 mr-3" />
+                      Notifications
+                      {notifications.length > 0 && (
+                        <Badge className="ml-auto bg-red-500 text-white">{notifications.length}</Badge>
+                      )}
+                    </Link>
+                  )}
+                  {user ? (
+                    <Button
+                      variant="ghost"
+                      className="flex items-center w-full justify-start text-sm font-medium transition-colors hover:text-primary p-2 rounded-md text-muted-foreground"
+                      onClick={() => {
+                        handleLogout()
+                        closeMenu()
                       }}
                     >
-                      <button
-                        onClick={() => handleNavClick(link.path)}
-                        className={`text-lg font-semibold hover:text-yellow-500 transition-colors duration-300 block py-3 w-full text-left focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-black rounded px-2 ${
-                          pathname === link.path ? "text-yellow-500" : "text-white"
-                        }`}
-                        aria-current={pathname === link.path ? "page" : undefined}
-                      >
-                        {link.name}
-                      </button>
-                    </div>
-                  ))}
-                </nav>
-
-                {/* Mobile Contact Icons */}
-                <div
-                  className="flex justify-center space-x-6 pt-6 border-t border-white/10 transform transition-all duration-300"
-                  style={{
-                    opacity: isMenuOpen ? 1 : 0,
-                    transform: `translateY(${isMenuOpen ? 0 : 20}px)`,
-                    transitionDelay: "600ms",
-                  }}
-                >
-                  <a
-                    href="tel:+919948614914"
-                    className="p-3 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-yellow-600 transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                    aria-label="Call us"
-                  >
-                    <Phone className="h-6 w-6 text-white" />
-                  </a>
-                  <a
-                    href="mailto:groovefitness79@gmail.com"
-                    className="p-3 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-yellow-600 transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                    aria-label="Email us"
-                  >
-                    <Mail className="h-6 w-6 text-white" />
-                  </a>
-                  <a
-                    href="https://wa.me/919948614914"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-3 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-green-600 transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-green-500"
-                    aria-label="WhatsApp us"
-                  >
-                    <MessageCircle className="h-6 w-6 text-white" />
-                  </a>
-                  <a
-                    href="https://www.instagram.com/gravityfitness_myp?igsh=ZDQ1aGVhaDNnajNv"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-3 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-pink-600 transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-pink-500"
-                    aria-label="Follow us on Instagram"
-                  >
-                    <Instagram className="h-6 w-6 text-white" />
-                  </a>
+                      <LogOut className="h-5 w-5 mr-3" />
+                      Log out
+                    </Button>
+                  ) : (
+                    <Link
+                      href="/auth/login"
+                      className="flex items-center text-sm font-medium transition-colors hover:text-primary p-2 rounded-md text-red-500"
+                      onClick={closeMenu}
+                    >
+                      <User className="h-5 w-5 mr-3" />
+                      Login / Sign up
+                    </Link>
+                  )}
                 </div>
-
-                <div
-                  className="transform transition-all duration-300"
-                  style={{
-                    opacity: isMenuOpen ? 1 : 0,
-                    transform: `translateY(${isMenuOpen ? 0 : 20}px)`,
-                    transitionDelay: "700ms",
-                  }}
-                >
-                  <button
-                    onClick={() => handleNavClick("/courses")}
-                    className="w-full bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-700 hover:to-yellow-800 text-black font-bold py-3 rounded-full focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-black transform transition-transform duration-300 hover:scale-105"
-                  >
-                    JOIN NOW
-                  </button>
-                </div>
-              </div>
+              </nav>
             </div>
-          </div>
-        </div>
-      )}
-    </>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </header>
   )
 }
